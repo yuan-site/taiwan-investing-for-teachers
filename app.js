@@ -94,7 +94,7 @@ function lesson(i,j){
  <article class="article">
  <div class="status-row"><span>本主題 ${j+1}／${g.lessons.length}${finished?' · <span class="done">✓ 已完成</span>':""}</span><button class="btn plain mini" id="focus" aria-pressed="false">投影閱讀</button></div>
  <h1>${l.title}</h1>
- <section><h2>先理解觀念</h2><p>${l.body}</p></section>
+ <section><h2>先理解觀念</h2>${(l.concepts ?? [l.body]).map(paragraph => `<p>${esc(paragraph)}</p>`).join("")}</section>
  ${risk?`<section class="note risk"><strong>風險提醒</strong><p>${risk}</p></section>`:""}
  ${example?`<details class="supplement"><summary>${example[0]}</summary><p>${example[1]}</p></details>`:""}
  <section class="quiz"><h2>動手練習</h2><form id="quiz"><fieldset><legend>${l.question}</legend>
@@ -205,5 +205,6 @@ document.querySelector(".skip").addEventListener("click",e=>{e.preventDefault();
 window.addEventListener("hashchange",()=>render());
 render(true);
 })();
+
 
 
