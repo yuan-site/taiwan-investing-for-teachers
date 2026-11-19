@@ -85,7 +85,7 @@ function lesson(i,j){
  state.last=[i,j];save();
  const prev=j?stepPath(i,j-1):i?stepPath(i-1,course[i-1].lessons.length-1):"#/route";
  const next=j+1<g.lessons.length?stepPath(i,j+1):i+1<course.length?stepPath(i+1,0):"#/plan";
- const practiceTool=i===2&&j===3?"lever":g.tool;
+ const practice=window.COURSE_PRACTICE[i][j], practiceTool=practice.tool;
  const options=(i+j)%2?[["b",l.b],["a",l.a]]:[["a",l.a],["b",l.b]];
  const citation=source[id], risk=risks[id], example=examples[id];
  main.innerHTML=`<div class="container page">
@@ -100,7 +100,7 @@ function lesson(i,j){
  <section class="quiz"><h2>動手練習</h2><form id="quiz"><fieldset><legend>${l.question}</legend>
  ${options.map(([value,label])=>`<label class="choice"><input required type="radio" name="answer" value="${value}" ${state.answers[id]===value?"checked":""}> ${label}</label>`).join("")}
  </fieldset><button type="submit" class="btn practice">查看答案</button><div class="feedback" id="quiz-result" role="status"></div></form></section>
- <section class="toolbox"><h2>${tools[practiceTool].title}</h2><p>${tools[practiceTool].intro}</p><div class="actions">${btn("開始練習","#/tools/"+practiceTool+"?back="+(i+1)+"-"+(j+1),"practice")}</div></section>
+ <section class="toolbox"><h2>${tools[practiceTool].title}</h2><p>${tools[practiceTool].intro}</p><p><strong>這一步的練習重點：</strong>${esc(practice.focus)}</p><div class="actions">${btn("開始練習","#/tools/"+practiceTool+"?back="+(i+1)+"-"+(j+1),"practice")}</div></section>
  <details class="supplement"><summary>帶領提示</summary><ol><li>請大家先想一想：「${l.question}」</li><li>先請兩位老師說明各自的理由，再查看答案與解說。</li><li>打開「${tools[practiceTool].title}」，完成範例後調整一項條件，討論結果如何變化。</li></ol></details>
  ${citation?`<details class="supplement"><summary>官方資料與查核日期</summary><p>${citation[2]}</p><p><a href="${citation[1]}" target="_blank" rel="noopener">${citation[0]}（另開視窗）</a> · 查核日期 2026-11-15</p></details>`:""}
  <div class="learn-controls">${btn("← 上一步",prev,"plain")}<div class="actions" style="margin:0">${finished?"":btn("先跳到下一步",next,"plain")}<button id="complete" class="btn primary">${finished?"繼續 →":"完成並繼續 →"}</button></div></div>
@@ -130,33 +130,69 @@ function workbench(name,params){
  const back=match&&course[+match[1]-1]?.lessons[+match[2]-1]?params.get("back"):null;
  const suffix=back?"?back="+back:"";
  const returnTo=back?stepPath(+match[1]-1,+match[2]-1):"#/route";
- const fields=tool.fields??tool.choices, vars=state.inputs[selected]??fields.map(f=>f.value);
+ const fields=tool.fields??tool.choices, inputKey="v2-"+selected;
+ const valid=values=>Array.isArray(values)&&values.length===fields.length&&values.every((v,j)=>Number.isFinite(v)&&(fields[j].items?Number.isInteger(v)&&v>=0&&v<fields[j].items.length:v>=fields[j].min&&v<=fields[j].max));
+ const vars=valid(state.inputs[inputKey])?state.inputs[inputKey]:fields.map(f=>f.value);
+ const practice=back?window.COURSE_PRACTICE[+match[1]-1][+match[2]-1]:null;
+ const context=practice?.tool===selected?practice:null;
+ const groups=['資金準備','交易實務','基金工具','企業分析','價格觀察','持股資金','消息研究','長期規劃','風險管理'];
  main.innerHTML=`<div class="container page"><p class="breadcrumbs"><a href="${returnTo}">${back?"← 返回原步驟":"← 返回學習路線"}</a></p><h1>練習工具</h1>
- <nav class="tool-nav" aria-label="選擇練習工具">${Object.entries(tools).map(([k,v])=>btn(v.title,"#/tools/"+k+suffix,"plain mini",k===selected?'aria-current="page"':"")).join("")}</nav>
+ <div class="tool-picker"><label for="tool-select">選擇練習工具</label><select id="tool-select">${groups.map(group=>`<optgroup label="${group}">${Object.entries(tools).filter(([,v])=>v.group===group).map(([k,v])=>`<option value="${k}" ${k===selected?'selected':''}>${v.title}</option>`).join('')}</optgroup>`).join('')}</select></div>
  <article class="article"><h2>${tool.title}</h2><p>${tool.intro}</p>
+ ${context?`<aside class="note practice-context"><strong>對應步驟：${esc(course[+match[1]-1].lessons[+match[2]-1].title)}</strong><p>${esc(context.focus)}</p></aside>`:''}
+ <details class="supplement"><summary>如何操作這個練習</summary><ol>${tool.steps.map(s=>`<li>${s}</li>`).join('')}</ol><p>所有數字都是練習假設，不會連接帳戶或取得即時報價。修改後請按「計算目前情境」。</p></details>
  <form id="tool-form">
  <div class="formgrid">${fields.map((f,j)=>`<label>${f.label}${f.items?`<select name="p${j}">${f.items.map((v,k)=>`<option value="${k}" ${vars[j]===k?"selected":""}>${v}</option>`).join("")}</select>`:`<input type="number" required name="p${j}" min="${f.min}" max="${f.max}" step="${f.step}" value="${esc(vars[j]??f.value)}">`}</label>`).join("")}</div>
- <div class="actions"><button class="btn practice">查看結果</button><button class="btn plain" type="button" id="reset-example">恢復範例</button></div>
+ <div class="actions"><button class="btn practice">計算目前情境</button><button class="btn plain" type="button" id="pin-scenario">記住目前情境作比較</button><button class="btn plain" type="button" id="reset-example">恢復範例</button></div>
+ <p id="change-status" class="muted"></p>
  <div role="status" class="feedback" id="tool-result"></div>
+ <details class="supplement" id="comparison" hidden><summary>查看記住的情境與差異</summary><div id="input-diff"></div><div id="baseline-result"></div><button class="btn plain mini" id="clear-baseline" type="button">清除比較情境</button></details>
  </form>
+ <div class="practice-notes"><label for="practice-note">我的觀察與下一步查證</label><p class="muted">記下改了什麼、結果如何變化，以及還要查哪些資料。文字儲存在此瀏覽器。</p><textarea id="practice-note" maxlength="2000" placeholder="例如：收入減少20%後每月出現缺口；需先確認年度保費是否重複計入。"></textarea><p id="note-status" role="status" class="muted"></p></div>
+ ${['etf','lever','growth'].includes(selected)?'<details class="supplement"><summary>延伸查核資料</summary><p><a href="https://wwwc.twse.com.tw/zh/products/securities/etf/products/li.html" target="_blank" rel="noopener">證交所：每日槓桿與反向ETF</a> · <a href="https://www.twse.com.tw/downloads/zh/ETF/concept08.pdf" target="_blank" rel="noopener">證交所：ETF折溢價</a> · <a href="https://www.investor.gov/financial-tools-calculators/calculators/compound-interest-calculator" target="_blank" rel="noopener">Investor.gov：複利試算的輸入假設</a></p><p>工具另採用畫面說明的簡化假設，並非官方報價或商品績效。</p></details>':''}
  ${selected==="order"?'<details class="supplement"><summary>費率與官方來源</summary><p>預填 0.3% 為一般股票賣出交易稅率。現股當日沖銷優惠有適用條件與期限。手續費率及最低費用由券商規定，表中皆可改成練習假設。</p><p><a href="https://www.etax.nat.gov.tw/etwmain/tax-info/understanding/tax-knowledge/rwG2M1N" target="_blank" rel="noopener">財政部稅務入口網｜買賣股票</a> · 查核日期 2026-11-15</p></details>':""}
  <div class="actions">${btn(back?"返回原步驟":"返回學習路線",returnTo,"plain")}</div></article></div>`;
  const form=main.querySelector("#tool-form");
  const output=main.querySelector("#tool-result");
+ const changed=main.querySelector('#change-status');
+ let baseline=valid(state.inputs['compare-'+inputKey])?state.inputs['compare-'+inputKey]:null;
+ let lastValues=vars.slice();
+ const readValues=()=>fields.map((_,j)=>Number(form.elements.namedItem('p'+j).value));
+ function comparison(values){
+  const panel=main.querySelector('#comparison');panel.hidden=!baseline;
+  if(!baseline)return;
+  const changes=fields.flatMap((f,j)=>values[j]!==baseline[j]?[`<li>${esc(f.label)}：${esc(f.items?f.items[baseline[j]]:baseline[j])} → ${esc(f.items?f.items[values[j]]:values[j])}</li>`]:[]);
+  main.querySelector('#input-diff').innerHTML=changes.length?'<p>相對記住情境的輸入差異：</p><ul>'+changes.join('')+'</ul>':'<p>目前輸入與記住的情境相同；請修改條件再計算。</p>';
+  const box=main.querySelector('#baseline-result');box.innerHTML='<h3>記住的情境結果</h3>'+tools[selected].run(baseline).html;
+  box.querySelectorAll('canvas,details').forEach(el=>el.remove());
+ }
  function display(values,persist){
-  const result=tool.run(values);output.classList.toggle("try",!!result.alert);output.innerHTML=result.html;
+  const result=tool.run(values);output.classList.toggle("try",!!result.alert);output.innerHTML='<h3>目前情境結果</h3>'+result.html;
   if(result.plot)window.drawCoursePlot(output.querySelector("canvas"),result.plot);
-  if(persist){state.inputs[selected]=values;save()}
+  lastValues=values.slice();changed.textContent='已依目前輸入計算。';comparison(values);
+  if(persist){state.inputs[inputKey]=values;save()}
  }
  form.addEventListener("submit",e=>{
   e.preventDefault();const data=new FormData(form), values=fields.map((_,j)=>Number(data.get("p"+j)));
-  if(values.every(Number.isFinite))display(values,true);
+  if(valid(values))display(values,true);
  });
  main.querySelector("#reset-example").addEventListener("click",()=>{
   const values=fields.map((f,j)=>{form.elements.namedItem("p"+j).value=f.value;return f.value});
   display(values,true);
  });
- if(state.inputs[selected])display(vars,false);
+ form.addEventListener('input',()=>{changed.textContent='輸入已修改，請重新計算以更新下方結果。'});
+ main.querySelector('#tool-select').addEventListener('change',e=>{location.hash='#/tools/'+e.target.value+suffix});
+ main.querySelector('#pin-scenario').addEventListener('click',()=>{
+  if(!form.reportValidity())return;
+  const values=readValues();if(!valid(values))return;
+  baseline=values.slice();state.inputs['compare-'+inputKey]=baseline;display(values,true);
+  main.querySelector('#comparison').open=true;changed.textContent='已記住這組情境。修改一項條件後重新計算，可比較兩次結果。';
+ });
+ main.querySelector('#clear-baseline').addEventListener('click',()=>{baseline=null;delete state.inputs['compare-'+inputKey];save();comparison(lastValues)});
+ const noteKey='note-'+(back??'all')+'-'+selected,note=main.querySelector('#practice-note');
+ note.value=typeof state.inputs[noteKey]==='string'?state.inputs[noteKey]:'';
+ note.addEventListener('input',()=>{state.inputs[noteKey]=note.value;main.querySelector('#note-status').textContent=save()?'觀察已儲存在此瀏覽器。':'目前無法儲存，請自行複製保留。'});
+ display(vars,false);
 }
 const planFields=[
  ["purpose","資金用途與期限","例如：這筆資金預計何時使用？"],
